@@ -2,7 +2,6 @@ import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
 # Замените 'YOUR_BOT_TOKEN' на реальный токен бота
-TOKEN = '8474625217:AAF9TRFtnkCRikD_9wTUl_zBbV4O6gOcZ84'
 bot = telebot.TeleBot(TOKEN)
 
 # Список ID админов (замени на свой ID после получения)
