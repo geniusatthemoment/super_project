@@ -50,12 +50,18 @@ class UserStates(StatesGroup):
     AddEvent = State()
     AddAdmin = State()
 
+# Добавляем состояния для тестов из tests_module.py
+class TestStates(StatesGroup):
+    TestChoice = State()
+    PHQ9_Q = State()
+    GAD7_Q = State()
+
 # Проверка админ-прав
 def is_admin(user_id):
     data = read_data()
     return user_id in data['admins']
 
-# Меню пользователя
+# Меню пользователя - добавляем кнопку тестов
 def user_menu():
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="Навигатор помощи"))
@@ -63,6 +69,7 @@ def user_menu():
     builder.add(KeyboardButton(text="Тревожная кнопка"))
     builder.add(KeyboardButton(text="Анонсы мероприятий"))
     builder.add(KeyboardButton(text="Задать вопрос"))
+    builder.add(KeyboardButton(text="Тесты самооценки"))  # Добавляем кнопку тестов
     return builder.as_markup(resize_keyboard=True)
 
 # Меню выбора режима для админа
@@ -86,6 +93,14 @@ def help_navigator():
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="Мне нужна помощь"))
     builder.add(KeyboardButton(text="Хочу сообщить о проблеме"))
+    builder.add(KeyboardButton(text="Вернуться в главное меню"))
+    return builder.as_markup(resize_keyboard=True)
+
+# Меню выбора теста из tests_module.py
+def get_test_menu():
+    builder = ReplyKeyboardBuilder()
+    builder.add(KeyboardButton(text="Депрессия (PHQ-9)"))
+    builder.add(KeyboardButton(text="Тревожность (GAD-7)"))
     builder.add(KeyboardButton(text="Вернуться в главное меню"))
     return builder.as_markup(resize_keyboard=True)
 
@@ -157,6 +172,10 @@ async def handle_text(message: types.Message, state: FSMContext):
         await message.answer("Введите ваш вопрос для экспертов ЦМП:")
         await state.set_state(UserStates.AskQuestion)
 
+    # Добавляем обработку кнопки тестов
+    elif text == "Тесты самооценки":
+        await start_test(message, state)
+
     elif text == "Добавить мероприятие" and is_admin(user_id):
         await message.answer(
             "Введите данные мероприятий (формат: Название|Дата|Описание;Название2|Дата2|Описание2 или одно мероприятие: Название|Дата|Описание):"
@@ -180,6 +199,16 @@ async def handle_text(message: types.Message, state: FSMContext):
 
     elif text == "Вернуться в главное меню":
         await message.answer("Главное меню:", reply_markup=user_menu())
+
+    # Добавляем обработку состояний тестов
+    elif await state.get_state() == TestStates.TestChoice.state:
+        await choose_test(message, state)
+
+    elif await state.get_state() == TestStates.PHQ9_Q.state:
+        await handle_phq9(message, state, user_menu)
+
+    elif await state.get_state() == TestStates.GAD7_Q.state:
+        await handle_gad7(message, state, user_menu)
 
 # Обработчик тем помощи
 @dp.message(UserStates.HelpTopic)
@@ -303,6 +332,132 @@ async def handle_add_admin(message: types.Message, state: FSMContext):
 
     await message.answer(response, reply_markup=admin_panel())
     await state.clear()
+
+# Добавляем функции из tests_module.py
+async def start_test(message: types.Message, state: FSMContext):
+    await message.answer("Выберите тест для самооценки:", reply_markup=get_test_menu())
+    await state.set_state(TestStates.TestChoice)
+
+async def choose_test(message: types.Message, state: FSMContext):
+    text = message.text
+    if text == "Депрессия (PHQ-9)":
+        questions = [
+            "1️⃣ Интерес или удовольствие от дел?",
+            "2️⃣ Чувство подавленности, депрессии?",
+            "3️⃣ Проблемы со сном?",
+            "4️⃣ Усталость или низкая энергия?",
+            "5️⃣ Аппетит или вес?",
+            "6️⃣ Чувство вины или неудачника?",
+            "7️⃣ Проблемы с концентрацией?",
+            "8️⃣ Замедленные движения или тревожность?",
+            "9️⃣ Мысли о смерти или самоповреждении?"
+        ]
+        await state.update_data(test='PHQ9', questions=questions, current=0, answers=[])
+        await message.answer(questions[0] + "\n0–Никогда\n1–Несколько дней\n2–Более половины дней\n3–Почти каждый день")
+        await state.set_state(TestStates.PHQ9_Q)
+    elif text == "Тревожность (GAD-7)":
+        questions = [
+            "1️⃣ Чувство нервозности, тревоги или напряжения?",
+            "2️⃣ Не могу контролировать тревогу?",
+            "3️⃣ Тревога мешает спать?",
+            "4️⃣ Чувство усталости?",
+            "5️⃣ Трудности с концентрацией?",
+            "6️⃣ Раздражительность?",
+            "7️⃣ Напряжение мышц?"
+        ]
+        await state.update_data(test='GAD7', questions=questions, current=0, answers=[])
+        await message.answer(questions[0] + "\n0–Никогда\n1–Несколько дней\n2–Более половины дней\n3–Почти каждый день")
+        await state.set_state(TestStates.GAD7_Q)
+    else:
+        await state.clear()
+
+async def handle_phq9(message: types.Message, state: FSMContext, user_menu_func):
+    try:
+        score = int(message.text)
+        if score not in [0, 1, 2, 3]:
+            raise ValueError
+    except ValueError:
+        await message.answer("Введите число от 0 до 3.")
+        return
+
+    data_state = await state.get_data()
+    answers = data_state['answers']
+    answers.append(score)
+    current = data_state['current'] + 1
+    questions = data_state['questions']
+
+    if current < len(questions):
+        await state.update_data(current=current, answers=answers)
+        await message.answer(questions[current] + "\n0–Никогда\n1–Несколько дней\n2–Более половины дней\n3–Почти каждый день")
+    else:
+        total = sum(answers)
+        if total <= 4:
+            result_text = "✅ Минимальные признаки депрессии."
+        elif 5 <= total <= 9:
+            result_text = "⚠️ Лёгкая депрессия."
+        elif 10 <= total <= 14:
+            result_text = "⚠️ Умеренная депрессия."
+        elif 15 <= total <= 19:
+            result_text = "🚨 Выраженная депрессия."
+        else:
+            result_text = "🚨 Тяжёлая депрессия. Рекомендуется консультация специалиста."
+
+        data = read_data()
+        if 'test_results' not in data:
+            data['test_results'] = []
+        data['test_results'].append({
+            'id': str(uuid.uuid4()),
+            'user_id': message.from_user.id,
+            'test': 'PHQ-9',
+            'score': total,
+            'result': result_text
+        })
+        write_data(data)
+        await message.answer(f"Ваш результат PHQ-9: {total} баллов.\n{result_text}\n☎️ Горячая линия: 8-800-2000-122", reply_markup=user_menu_func())
+        await state.clear()
+
+async def handle_gad7(message: types.Message, state: FSMContext, user_menu_func):
+    try:
+        score = int(message.text)
+        if score not in [0, 1, 2, 3]:
+            raise ValueError
+    except ValueError:
+        await message.answer("Введите число от 0 до 3.")
+        return
+
+    data_state = await state.get_data()
+    answers = data_state['answers']
+    answers.append(score)
+    current = data_state['current'] + 1
+    questions = data_state['questions']
+
+    if current < len(questions):
+        await state.update_data(current=current, answers=answers)
+        await message.answer(questions[current] + "\n0–Никогда\n1–Несколько дней\n2–Более половины дней\n3–Почти каждый день")
+    else:
+        total = sum(answers)
+        if total <= 4:
+            result_text = "✅ Минимальные признаки тревожности."
+        elif 5 <= total <= 9:
+            result_text = "⚠️ Лёгкая тревожность."
+        elif 10 <= total <= 14:
+            result_text = "⚠️ Умеренная тревожность."
+        else:
+            result_text = "🚨 Выраженная тревожность. Рекомендуется консультация специалиста."
+
+        data = read_data()
+        if 'test_results' not in data:
+            data['test_results'] = []
+        data['test_results'].append({
+            'id': str(uuid.uuid4()),
+            'user_id': message.from_user.id,
+            'test': 'GAD-7',
+            'score': total,
+            'result': result_text
+        })
+        write_data(data)
+        await message.answer(f"Ваш результат GAD-7: {total} баллов.\n{result_text}\n☎️ Горячая линия: 8-800-2000-122", reply_markup=user_menu_func())
+        await state.clear()
 
 # Запуск бота
 async def main():
