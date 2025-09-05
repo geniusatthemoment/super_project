@@ -4,6 +4,7 @@ import os
 load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
+API_AI = os.getenv("API_DEEPSEEK")
 if not TOKEN:
     raise RuntimeError("TOKEN not set in .env")
 
