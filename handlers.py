@@ -2,11 +2,13 @@ from aiogram import Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 import uuid
+import asyncio
 
 from storage import read_data, write_data
 from keyboards import user_menu, admin_mode_menu, admin_panel, help_navigator
 from states import UserStates
 from utils import is_admin
+from test import get_ai_response
 
 router = Router()
 
@@ -99,10 +101,27 @@ async def handle_text(message: types.Message, state: FSMContext):
         await message.answer("Введите Telegram ID администраторов (через запятую, например: 123456,789012):")
         await state.set_state(UserStates.AddAdmin)
 
+
     elif text == "Вернуться в главное меню":
+
         await message.answer("Главное меню:", reply_markup=user_menu())
+
     elif text == "Помощь от AI":
-        await message.answer("", reply_markup=user_menu())
+        await message.answer("Опишите ваш вопрос или проблему, и я отправлю это AI:")
+        await state.set_state(UserStates.AiChat)
+
+@router.message(UserStates.AiChat)
+async def handle_ai_chat(message: types.Message, state: FSMContext):
+    """Send user's text to AI and return the response."""
+    user_text = message.text
+    await message.answer("Обрабатываю запрос к AI, подождите...")
+    try:
+        response_text = await asyncio.to_thread(get_ai_response, user_text)
+        await message.answer(response_text, reply_markup=user_menu())
+    except Exception:
+        await message.answer("Произошла ошибка при обращении к AI.", reply_markup=user_menu())
+    finally:
+        await state.clear()
 
 @router.message(UserStates.HelpTopic)
 async def handle_help_topic(message: types.Message, state: FSMContext):

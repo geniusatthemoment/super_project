@@ -6,3 +6,4 @@ class UserStates(StatesGroup):
     AskQuestion = State()
     AddEvent = State()
     AddAdmin = State()
+    AiChat = State()
