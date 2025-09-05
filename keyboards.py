@@ -8,6 +8,7 @@ def user_menu() -> ReplyKeyboardMarkup:
     b.add(KeyboardButton(text="Тревожная кнопка"))
     b.add(KeyboardButton(text="Анонсы мероприятий"))
     b.add(KeyboardButton(text="Задать вопрос"))
+    b.add(KeyboardButton(text="Помощь от AI"))
     return b.as_markup(resize_keyboard=True)
 
 def admin_mode_menu() -> ReplyKeyboardMarkup:

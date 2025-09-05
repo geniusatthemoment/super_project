@@ -101,6 +101,8 @@ async def handle_text(message: types.Message, state: FSMContext):
 
     elif text == "Вернуться в главное меню":
         await message.answer("Главное меню:", reply_markup=user_menu())
+    elif text == "Помощь от AI":
+        await message.answer("", reply_markup=user_menu())
 
 @router.message(UserStates.HelpTopic)
 async def handle_help_topic(message: types.Message, state: FSMContext):
