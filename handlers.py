@@ -1,106 +1,27 @@
-import asyncio
-import json
-import os
-import uuid
-from aiogram import Bot, Dispatcher, types
+from aiogram import Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.utils.keyboard import ReplyKeyboardBuilder
-from dotenv import load_dotenv
-load_dotenv()
-TOKEN = os.getenv("TOKEN")
-# Путь к JSON-файлу
-DATA_FILE = 'bot_data.json'
+import uuid
 
-ADMIN_IDS = [563057258]
+from storage import read_data, write_data
+from keyboards import user_menu, admin_mode_menu, admin_panel, help_navigator
+from states import UserStates
+from utils import is_admin
 
-# Инициализация JSON-файла
-def init_data():
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'w') as f:
-            json.dump({'events': [], 'questions': [], 'admins': ADMIN_IDS}, f)
-    else:
-        data = read_data()
-        data['admins'] = list(set(data.get('admins', []) + ADMIN_IDS))
-        write_data(data)
+router = Router()
 
-# Чтение данных из JSON
-def read_data():
-    with open(DATA_FILE, 'r') as f:
-        return json.load(f)
-
-# Запись данных в JSON
-def write_data(data):
-    with open(DATA_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-
-init_data()
-
-# Инициализация бота и диспетчера
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
-
-# Определение состояний для FSM
-class UserStates(StatesGroup):
-    HelpTopic = State()
-    ReportProblem = State()
-    AskQuestion = State()
-    AddEvent = State()
-    AddAdmin = State()
-
-# Проверка админ-прав
-def is_admin(user_id):
-    data = read_data()
-    return user_id in data['admins']
-
-# Меню пользователя
-def user_menu():
-    builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="Навигатор помощи"))
-    builder.add(KeyboardButton(text="Куда обращаться?"))
-    builder.add(KeyboardButton(text="Тревожная кнопка"))
-    builder.add(KeyboardButton(text="Анонсы мероприятий"))
-    builder.add(KeyboardButton(text="Задать вопрос"))
-    return builder.as_markup(resize_keyboard=True)
-
-# Меню выбора режима для админа
-def admin_mode_menu():
-    builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="Режим пользователя"))
-    builder.add(KeyboardButton(text="Админ-панель"))
-    return builder.as_markup(resize_keyboard=True)
-
-# Админ-панель
-def admin_panel():
-    builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="Добавить мероприятие"))
-    builder.add(KeyboardButton(text="Просмотреть вопросы"))
-    builder.add(KeyboardButton(text="Добавить админа"))
-    builder.add(KeyboardButton(text="Вернуться к выбору режима"))
-    return builder.as_markup(resize_keyboard=True)
-
-# Навигатор помощи
-def help_navigator():
-    builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="Мне нужна помощь"))
-    builder.add(KeyboardButton(text="Хочу сообщить о проблеме"))
-    builder.add(KeyboardButton(text="Вернуться в главное меню"))
-    return builder.as_markup(resize_keyboard=True)
-
-# Обработчик команды /start
-@dp.message(Command("start"))
-async def start(message: types.Message):
+@router.message(Command("start"))
+async def start(message: types.Message, state: FSMContext):
+    """Handle the /start command, showing user or admin menu based on user role."""
     user_id = message.from_user.id
     if is_admin(user_id):
         await message.answer("Выберите режим работы:", reply_markup=admin_mode_menu())
     else:
         await message.answer("Добро пожаловать! Это бот психологической помощи.", reply_markup=user_menu())
 
-# Обработчик текстовых сообщений
-@dp.message()
+@router.message()
 async def handle_text(message: types.Message, state: FSMContext):
+    """Handle text messages, routing to appropriate actions based on user input."""
     user_id = message.from_user.id
     text = message.text
 
@@ -144,7 +65,7 @@ async def handle_text(message: types.Message, state: FSMContext):
 
     elif text == "Анонсы мероприятий":
         data = read_data()
-        events = data['events']
+        events = data.get('events', [])
         if events:
             response = "📅 Предстоящие мероприятия:\n"
             for event in events:
@@ -165,7 +86,7 @@ async def handle_text(message: types.Message, state: FSMContext):
 
     elif text == "Просмотреть вопросы" and is_admin(user_id):
         data = read_data()
-        questions = data['questions']
+        questions = data.get('questions', [])
         if questions:
             response = "📋 Вопросы пользователей:\n"
             for q in questions:
@@ -181,9 +102,9 @@ async def handle_text(message: types.Message, state: FSMContext):
     elif text == "Вернуться в главное меню":
         await message.answer("Главное меню:", reply_markup=user_menu())
 
-# Обработчик тем помощи
-@dp.message(UserStates.HelpTopic)
+@router.message(UserStates.HelpTopic)
 async def handle_help_topic(message: types.Message, state: FSMContext):
+    """Handle user selection of help topics (stress, depression, cyberbullying)."""
     topic = message.text
     if topic == "1":
         await message.answer(
@@ -204,22 +125,22 @@ async def handle_help_topic(message: types.Message, state: FSMContext):
         await message.answer("Пожалуйста, выберите 1, 2 или 3.", reply_markup=user_menu())
     await state.clear()
 
-# Обработчик сообщений о проблеме
-@dp.message(UserStates.ReportProblem)
+@router.message(UserStates.ReportProblem)
 async def handle_report(message: types.Message, state: FSMContext):
+    """Handle user-submitted problem reports."""
     await message.answer(
         "Ваше сообщение принято. Обратитесь в полицию (102) или горячую линию (8-800-2000-122).",
         reply_markup=user_menu()
     )
     await state.clear()
 
-# Обработчик вопросов
-@dp.message(UserStates.AskQuestion)
+@router.message(UserStates.AskQuestion)
 async def handle_question(message: types.Message, state: FSMContext):
+    """Handle user-submitted questions for experts."""
     user_id = message.from_user.id
     question = message.text
     data = read_data()
-    data['questions'].append({
+    data.setdefault('questions', []).append({
         'id': str(uuid.uuid4()),
         'user_id': user_id,
         'question': question,
@@ -229,9 +150,9 @@ async def handle_question(message: types.Message, state: FSMContext):
     await message.answer("Ваш вопрос отправлен экспертам!", reply_markup=user_menu())
     await state.clear()
 
-# Обработчик добавления мероприятий
-@dp.message(UserStates.AddEvent)
+@router.message(UserStates.AddEvent)
 async def handle_add_event(message: types.Message, state: FSMContext):
+    """Handle admin addition of events to the system."""
     user_id = message.from_user.id
     if not is_admin(user_id):
         await state.clear()
@@ -244,7 +165,7 @@ async def handle_add_event(message: types.Message, state: FSMContext):
     for event_str in events_input:
         try:
             title, date, description = event_str.split('|')
-            data['events'].append({
+            data.setdefault('events', []).append({
                 'id': str(uuid.uuid4()),
                 'title': title.strip(),
                 'date': date.strip(),
@@ -266,9 +187,9 @@ async def handle_add_event(message: types.Message, state: FSMContext):
     await message.answer(response, reply_markup=admin_panel())
     await state.clear()
 
-# Обработчик добавления админов
-@dp.message(UserStates.AddAdmin)
+@router.message(UserStates.AddAdmin)
 async def handle_add_admin(message: types.Message, state: FSMContext):
+    """Handle admin addition of new admin Telegram IDs."""
     user_id = message.from_user.id
     if not is_admin(user_id):
         await state.clear()
@@ -282,8 +203,8 @@ async def handle_add_admin(message: types.Message, state: FSMContext):
     for admin_id in admin_ids_input:
         try:
             new_admin_id = int(admin_id.strip())
-            if new_admin_id not in data['admins']:
-                data['admins'].append(new_admin_id)
+            if new_admin_id not in data.get('admins', []):
+                data.setdefault('admins', []).append(new_admin_id)
                 added_count += 1
             else:
                 existing_admins.append(str(new_admin_id))
@@ -294,19 +215,4 @@ async def handle_add_admin(message: types.Message, state: FSMContext):
         write_data(data)
         response = f"Успешно добавлено {added_count} администратор(ов)!"
     else:
-        response = "Ни один администратор не добавлен."
-
-    if existing_admins:
-        response += f"\nСледующие ID уже в списке админов: {', '.join(existing_admins)}"
-    if error_messages:
-        response += "\nОшибки:\n" + "\n".join(error_messages)
-
-    await message.answer(response, reply_markup=admin_panel())
-    await state.clear()
-
-# Запуск бота
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == '__main__':
-    asyncio.run(main())
+        response = "Ни один администратор не добавлено"
